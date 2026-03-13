@@ -1034,14 +1034,29 @@ function showResults() {
 })();
 
 /* ── Scoreboard ── */
-const API = '/api/leaderboard';
+const AT_TOKEN = 'patKg6h3mnv2l7i8U.9c76b20000bf4ade3784a5348351abd21bc9a33b7ec71fd23585308f40d65782';
+const AT_BASE  = 'appILe0gVr2wJp7oK';
+const AT_TABLE = 'tblvHw4KM0WlMEsGw';
+const AT_URL   = `https://api.airtable.com/v0/${AT_BASE}/${AT_TABLE}`;
+const AT_HEADERS = { 'Authorization': `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' };
+
 let pendingScore = null;
 let pendingPct = null;
 
 async function loadScores() {
   try {
-    const res = await fetch(API);
-    return res.ok ? await res.json() : [];
+    const res = await fetch(AT_URL + '?sort[0][field]=score&sort[0][direction]=desc&maxRecords=20', {
+      headers: AT_HEADERS
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.records.map(r => ({
+      name: r.fields.name,
+      score: r.fields.score,
+      pct: r.fields.pct,
+      date: r.fields.date,
+      id: r.id
+    }));
   } catch { return []; }
 }
 
@@ -1049,23 +1064,37 @@ async function submitScore() {
   const name = document.getElementById('nameInput').value.trim() || 'Anonymous';
   document.getElementById('nameModal').style.display = 'none';
   try {
-    const res = await fetch(API, {
+    await fetch(AT_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: AT_HEADERS,
       body: JSON.stringify({
-        name,
-        score: pendingScore,
-        pct: pendingPct,
-        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        fields: {
+          name,
+          score: pendingScore,
+          pct: pendingPct,
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        }
       })
     });
-    if (res.ok) {
-      renderScoreboard();
-      openScoreboard();
-    }
+    renderScoreboard();
+    openScoreboard();
   } catch (e) {
     console.error('Failed to save score', e);
   }
+}
+
+async function clearScoreboard() {
+  if (!confirm('Clear all scores from the leaderboard?')) return;
+  try {
+    const scores = await loadScores();
+    // Airtable deletes up to 10 records at a time
+    for (let i = 0; i < scores.length; i += 10) {
+      const ids = scores.slice(i, i + 10).map(s => s.id);
+      const params = ids.map(id => `records[]=${id}`).join('&');
+      await fetch(`${AT_URL}?${params}`, { method: 'DELETE', headers: AT_HEADERS });
+    }
+  } catch (e) { console.error('Clear failed', e); }
+  renderScoreboard();
 }
 
 function promptScoreSave(score, pct) {
@@ -1322,14 +1351,7 @@ async function renderScoreboard() {
     </div>`).join('');
 }
 
-async function clearScoreboard() {
-  if (confirm('Clear all scores from the leaderboard?')) {
-    try {
-      await fetch(API, { method: 'DELETE' });
-    } catch(e) { console.error('Clear failed', e); }
-    renderScoreboard();
-  }
-}
+
 
 // Enter key submits name
 document.getElementById('nameInput').addEventListener('keydown', e => {
