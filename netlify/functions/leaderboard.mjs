@@ -1,78 +1,94 @@
-import { getStore } from "@netlify/blobs";
-
-const STORE_NAME = "leaderboard";
-const KEY = "scores";
+const SCORES_PATH = "scores.json";
 const MAX_SCORES = 20;
 
-export default async (req, context) => {
-  const store = getStore(STORE_NAME);
+async function getFile() {
+  const repo = process.env.GITHUB_REPO;
+  const token = process.env.GITHUB_TOKEN;
+  const res = await fetch(
+    `https://api.github.com/repos/${repo}/contents/${SCORES_PATH}`,
+    { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } }
+  );
+  if (res.status === 404) return { scores: [], sha: null };
+  const data = await res.json();
+  const scores = JSON.parse(atob(data.content.replace(/\n/g, "")));
+  return { scores, sha: data.sha };
+}
 
-  // ── GET: return current scores ──
+async function saveFile(scores, sha) {
+  const repo = process.env.GITHUB_REPO;
+  const token = process.env.GITHUB_TOKEN;
+  const body = {
+    message: "update leaderboard",
+    content: btoa(JSON.stringify(scores)),
+    ...(sha ? { sha } : {}),
+  };
+  await fetch(
+    `https://api.github.com/repos/${repo}/contents/${SCORES_PATH}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }
+  );
+}
+
+export default async (req) => {
+  const headers = cors();
+
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers });
+  }
+
   if (req.method === "GET") {
     try {
-      const raw = await store.get(KEY);
-      const scores = raw ? JSON.parse(raw) : [];
+      const { scores } = await getFile();
       return new Response(JSON.stringify(scores), {
-        headers: { "Content-Type": "application/json", ...cors() },
+        headers: { "Content-Type": "application/json", ...headers },
       });
-    } catch {
-      return new Response("[]", {
-        headers: { "Content-Type": "application/json", ...cors() },
-      });
+    } catch (e) {
+      return new Response("[]", { headers: { "Content-Type": "application/json", ...headers } });
     }
   }
 
-  // ── POST: add a new score ──
   if (req.method === "POST") {
     try {
-      const body = await req.json();
-      const { name, score, pct, date } = body;
-
+      const { name, score, pct, date } = await req.json();
       if (!name || score === undefined || pct === undefined) {
         return new Response(JSON.stringify({ error: "Missing fields" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json", ...cors() },
+          status: 400, headers: { "Content-Type": "application/json", ...headers },
         });
       }
-
-      const raw = await store.get(KEY);
-      const scores = raw ? JSON.parse(raw) : [];
-
+      const { scores, sha } = await getFile();
       scores.push({ name: String(name).slice(0, 40), score, pct, date });
       scores.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
       const trimmed = scores.slice(0, MAX_SCORES);
-
-      await store.set(KEY, JSON.stringify(trimmed));
-
+      await saveFile(trimmed, sha);
       return new Response(JSON.stringify(trimmed), {
-        headers: { "Content-Type": "application/json", ...cors() },
+        headers: { "Content-Type": "application/json", ...headers },
       });
     } catch (e) {
       return new Response(JSON.stringify({ error: e.message }), {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...cors() },
+        status: 500, headers: { "Content-Type": "application/json", ...headers },
       });
     }
   }
 
-  // ── DELETE: clear all scores ──
   if (req.method === "DELETE") {
     try {
-      await store.set(KEY, "[]");
+      const { sha } = await getFile();
+      await saveFile([], sha);
       return new Response(JSON.stringify({ ok: true }), {
-        headers: { "Content-Type": "application/json", ...cors() },
+        headers: { "Content-Type": "application/json", ...headers },
       });
     } catch (e) {
       return new Response(JSON.stringify({ error: e.message }), {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...cors() },
+        status: 500, headers: { "Content-Type": "application/json", ...headers },
       });
     }
-  }
-
-  // ── OPTIONS: CORS preflight ──
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: cors() });
   }
 
   return new Response("Method not allowed", { status: 405 });
