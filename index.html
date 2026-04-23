@@ -595,8 +595,8 @@ const QUIZ_TYPES = [
 
 const AT_TOKEN = 'patKg6h3mnv2l7i8U.9c76b20000bf4ade3784a5348351abd21bc9a33b7ec71fd23585308f40d65782';
 const AT_BASE  = 'appILe0gVr2wJp7oK';
-const AT_TABLE = 'tblvHw4KM0WlMEsGw';
-const AT_URL   = `https://api.airtable.com/v0/${AT_BASE}/${AT_TABLE}`;
+const AT_TABLE = 'Quiz Scores';
+const AT_URL = `https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE)}`;
 const AT_HEADERS = { 'Authorization': `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' };
 
 
@@ -1068,8 +1068,16 @@ function toggleLeaderboard() {
 async function fetchScores() {
   if (!AT_TOKEN || !AT_BASE || !AT_TABLE) return [];
   try {
-    const res = await fetch(AT_URL + '?maxRecords=200', { headers: AT_HEADERS });
-    if (!res.ok) return [];
+    const res = await fetch(
+      AT_URL + '?maxRecords=200&sort[0][field]=score&sort[0][direction]=desc',
+      {
+        headers: { Authorization: `Bearer ${AT_TOKEN}` }
+      }
+    );
+    if (!res.ok) {
+      console.error('Leaderboard fetch failed with status', res.status);
+      return [];
+    }
     const data = await res.json();
     return (data.records || []).map(r => ({
       id: r.id,
@@ -1080,6 +1088,7 @@ async function fetchScores() {
       quizType: r.fields.quiz_type || 'SKU Knowledge'
     }));
   } catch (err) {
+    console.error('Leaderboard fetch failed', err);
     return [];
   }
 }
@@ -1169,6 +1178,8 @@ async function submitScore() {
       })
     });
     if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('Airtable save response:', errText);
       throw new Error(`Save failed: ${resp.status}`);
     }
     state.scoreSavedForCurrentRun = true;
