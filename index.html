@@ -903,6 +903,8 @@ function buildQuestions(modeId) {
 }
 
 function startQuiz(modeId) {
+  state.scoreSavedForCurrentRun = false;
+  state.pendingScore = null;
   state.mode = modeId;
   state.questions = buildQuestions(modeId);
   state.currentIndex = 0;
@@ -1051,6 +1053,8 @@ function restartSameMode() {
 }
 
 function goHome() {
+  state.scoreSavedForCurrentRun = false;
+  state.pendingScore = null;
   setScreen('homeScreen');
 }
 
