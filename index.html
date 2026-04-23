@@ -1171,7 +1171,7 @@ async function submitScore() {
             name,
             score: state.pendingScore.score,
             pct: state.pendingScore.pct,
-            date: new Date().toISOString(),
+            date: new Date().toISOString().split('T')[0],
             quiz_type: state.pendingScore.quizType
           }
         }]
